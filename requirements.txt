@@ -1,0 +1,7 @@
+torch>=2.5.0
+transformers>=4.51.0,<5.0.0
+sentencepiece>=0.1.99
+protobuf>=4.0.0
+IndicTransToolkit>=0.1.0
+flask>=3.0.0
+flask-cors>=4.0.0
