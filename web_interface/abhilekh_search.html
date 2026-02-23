@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Abhilekh Patal - Multilingual Search (IndicTrans2)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="abhilekh_search.css">
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="navbar-brand">
+            <svg class="emblem" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="19" stroke="#8b1a1a" stroke-width="2"/>
+                <rect x="12" y="14" width="16" height="14" rx="1" stroke="#8b1a1a" stroke-width="1.5" fill="none"/>
+                <line x1="15" y1="18" x2="25" y2="18" stroke="#8b1a1a" stroke-width="1"/>
+                <line x1="15" y1="21" x2="25" y2="21" stroke="#8b1a1a" stroke-width="1"/>
+                <line x1="15" y1="24" x2="22" y2="24" stroke="#8b1a1a" stroke-width="1"/>
+                <rect x="17" y="9" width="6" height="5" rx="1" stroke="#8b1a1a" stroke-width="1.2" fill="#8b1a1a"/>
+            </svg>
+            <span class="logo-text">ABHILEKH PATAL</span>
+        </div>
+        <div class="navbar-links">
+            <a href="#" class="active" onclick="location.reload(); return false;">HOME</a>
+            <a href="https://abhilekh-patal.in/Category/Search/Search" target="_blank" rel="noopener">EXPLORE</a>
+        </div>
+    </nav>
+
+    <!-- Update Bar -->
+    <div class="update-bar">
+        <span id="updateBar">Last Updated: Loading...</span>
+    </div>
+
+    <!-- Hero Section -->
+    <div class="hero">
+        <h1 class="hero-title">Welcome To Abhilekh Patal V3.1</h1>
+        <p style="color: #fff; font-size: 16px; margin-top: -25px; margin-bottom: 20px; letter-spacing: 1.5px; text-shadow: 0 2px 6px rgba(0,0,0,0.4); opacity: 0.9;">Multilingual Synonym Search</p>
+
+        <!-- Search Card -->
+        <div class="search-card">
+            <span class="search-icon">&#128269;</span>
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Type here..."
+                autocomplete="off"
+            />
+        </div>
+
+        <!-- Autocomplete Suggestions Dropdown -->
+        <div class="suggestion-dropdown" id="suggestionDropdown"></div>
+
+        <!-- Character Counter -->
+        <div class="char-counter" id="charCounter">
+            <span id="charCount">0</span>/30 characters
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="hero-actions">
+            <button class="btn-search-main" id="btnSearch">Search</button>
+        </div>
+
+        <!-- Language auto-detected from input (Devanagari = Hindi, otherwise English) -->
+    </div>
+
+    <!-- Results Area -->
+    <div class="results-area">
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner"></div>
+
+        <!-- Translation Info -->
+        <div class="translation-info" id="translationInfo"></div>
+
+        <!-- Loading -->
+        <div class="loading-area" id="loadingArea">
+            <div class="spinner"></div>
+            <p>Translating &amp; searching...</p>
+        </div>
+
+        <!-- Tab Buttons -->
+        <div class="result-tabs" id="resultTabs">
+            <button class="result-tab active" data-tab="translated" id="tabTranslated">
+                Translated Results <span class="tab-count" id="tabTranslatedCount">0</span>
+            </button>
+            <button class="result-tab" data-tab="original" id="tabOriginal">
+                Original Language Results <span class="tab-count" id="tabOriginalCount">0</span>
+            </button>
+        </div>
+
+        <!-- Panel: Translated Results -->
+        <div class="result-panel active" id="panelTranslated">
+            <div class="panel-header">
+                <div class="panel-count">Found <strong id="translatedResultCount">0</strong> documents</div>
+                <div class="panel-query-tag" id="translatedQueryTag"></div>
+            </div>
+            <div id="translatedResultsList"></div>
+            <div class="show-more-wrapper" id="translatedShowMoreWrapper">
+                <button class="btn-show-more" id="translatedBtnShowMore">Show More</button>
+                <div class="show-more-count" id="translatedShowMoreCount"></div>
+            </div>
+            <div class="panel-no-results" id="translatedNoResults" style="display:none;">No documents found for the translated query.</div>
+        </div>
+
+        <!-- Panel: Original Language Results -->
+        <div class="result-panel" id="panelOriginal">
+            <div class="panel-header">
+                <div class="panel-count">Found <strong id="originalResultCount">0</strong> documents</div>
+                <div class="panel-query-tag" id="originalQueryTag"></div>
+            </div>
+            <div id="originalResultsList"></div>
+            <div class="show-more-wrapper" id="originalShowMoreWrapper">
+                <button class="btn-show-more" id="originalBtnShowMore">Show More</button>
+                <div class="show-more-count" id="originalShowMoreCount"></div>
+            </div>
+            <div class="panel-no-results" id="originalNoResults" style="display:none;">No documents found for the original language query.</div>
+        </div>
+
+        <!-- No Results (both empty) -->
+        <div class="no-results" id="noResults">
+            <div class="icon">&#128237;</div>
+            <h3>No documents found</h3>
+            <p>Try different keywords or check your spelling</p>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        Powered by IndicTrans2 (AI4Bharat) + Apache Solr &middot; Multilingual Search POC for Abhilekh Patal
+    </div>
+
+    <script src="abhilekh_search.js"></script>
+</body>
+</html>
