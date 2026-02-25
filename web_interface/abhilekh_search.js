@@ -38,6 +38,7 @@ let activeTab = 'translated';
 let currentLanguage = 'hin_Deva';
 let currentOriginalQuery = '';
 let suggestedFromQuery = null; // stores original Hindi input when user clicks a suggestion
+let suggestedResourceId = null; // stores Solr resourceId when user clicks a suggestion
 
 // ── DOM refs ──
 const $ = id => document.getElementById(id);
@@ -211,6 +212,7 @@ function setupListeners() {
             e.preventDefault();
             const selectedText = items[activeIndex].querySelector('.suggestion-text').textContent;
             suggestedFromQuery = $input.value.trim(); // capture original query before overwriting
+            suggestedResourceId = items[activeIndex].getAttribute('data-resourceid') || null;
             $input.value = selectedText;
             hideSuggestions();
             performSearch();
@@ -223,6 +225,7 @@ function setupListeners() {
         if (!item) return;
         const selectedText = item.querySelector('.suggestion-text').textContent;
         suggestedFromQuery = $input.value.trim(); // capture original query before overwriting
+        suggestedResourceId = item.getAttribute('data-resourceid') || null;
         $input.value = selectedText;
         hideSuggestions();
         performSearch();
@@ -261,6 +264,7 @@ async function performSearch() {
     // Auto-detect language from input text
     // If suggestion was clicked from a Hindi search, restore Hindi context
     let originalHindiQuery = null;
+    const clickedResourceId = suggestedResourceId; // capture before reset
     if (suggestedFromQuery && detectLanguage(suggestedFromQuery) !== 'eng_Latn') {
         currentLanguage = detectLanguage(suggestedFromQuery);
         originalHindiQuery = suggestedFromQuery;
@@ -268,6 +272,7 @@ async function performSearch() {
         currentLanguage = detectLanguage(query);
     }
     suggestedFromQuery = null; // reset after use
+    suggestedResourceId = null;
     applyCharLimit();
 
     // Character limit validation (only for non-English — they use translation API)
@@ -331,8 +336,11 @@ async function performSearch() {
         }
 
         const synonyms = isNonEnglish ? await expandQuery(searchOriginalQuery) : null;
-        const translatedPromise = searchSolr(searchTranslatedQuery, 0);
-        const originalPromise   = isNonEnglish ? searchSolr(searchOriginalQuery, 0, synonyms) : null;
+        const useExact = !!selectedTitle;  // suggestion clicked → exact phrase match
+        // For English suggestion clicks, use resourceId for reliable Solr lookup
+        const engSuggestionClicked = selectedTitle && detectLanguage(selectedTitle) === 'eng_Latn' && clickedResourceId;
+        const translatedPromise = searchSolr(searchTranslatedQuery, 0, null, useExact, engSuggestionClicked ? clickedResourceId : null);
+        const originalPromise   = isNonEnglish ? searchSolr(searchOriginalQuery, 0, synonyms, useExact) : null;
 
         const translatedData = await translatedPromise;
         const originalData   = originalPromise ? await originalPromise : null;
@@ -477,9 +485,10 @@ async function fetchSuggestions(partial, signal) {
         const results = [];
         for (const doc of docs) {
             const t = Array.isArray(doc['dc.title']) ? doc['dc.title'][0] : doc['dc.title'];
+            const rid = Array.isArray(doc['search.resourceid']) ? doc['search.resourceid'][0] : (doc['search.resourceid'] || '');
             if (t && !seen.has(t.toLowerCase())) {
                 seen.add(t.toLowerCase());
-                results.push({ title: t, fuzzy: fuzzy });
+                results.push({ title: t, resourceId: rid, fuzzy: fuzzy });
                 if (results.length >= CONFIG.suggestMaxResults) break;
             }
         }
@@ -493,7 +502,7 @@ async function fetchSuggestions(partial, signal) {
         const params = new URLSearchParams({
             'q':     'dc.title:' + partial + '*',
             'fq':    'search.resourcetype:Item',
-            'fl':    'dc.title',
+            'fl':    'dc.title,search.resourceid',
             'rows':  100,
             'wt':    'json'
         });
@@ -514,7 +523,7 @@ async function fetchSuggestions(partial, signal) {
                 'qf':       'dc.title',
                 'mm':       '1',
                 'fq':       'search.resourcetype:Item',
-                'fl':       'dc.title',
+                'fl':       'dc.title,search.resourceid',
                 'rows':     100,
                 'wt':       'json'
             });
@@ -563,7 +572,7 @@ function renderSuggestions(suggestions, partial, altPartial) {
             highlighted = plainTitle.replace(altRegex, '<mark>$1</mark>');
         }
         const fuzzyClass = item.fuzzy ? ' fuzzy-match' : '';
-        return '<div class="suggestion-item' + fuzzyClass + '" data-index="' + i + '">' +
+        return '<div class="suggestion-item' + fuzzyClass + '" data-index="' + i + '" data-resourceid="' + (item.resourceId || '') + '">' +
                '<span class="suggestion-icon">&#128269;</span>' +
                '<span class="suggestion-text">' + highlighted + '</span>' +
                '</div>';
@@ -580,24 +589,27 @@ function hideSuggestions() {
 }
 
 // ── Solr Search ──
-async function searchSolr(query, start, synonyms) {
+async function searchSolr(query, start, synonyms, exact, resourceId) {
     let qValue;
-    if (synonyms && synonyms.length > 1) {
+    if (resourceId) {
+        // Search by document ID — most reliable for suggestion clicks
+        qValue = 'search.resourceid:' + resourceId;
+    } else if (synonyms && synonyms.length > 1) {
         // Build OR query from synonym list for expanded search
         const terms = synonyms.map(function(s) { return '"' + s + '"'; }).join(' OR ');
         qValue = 'dc.title:(' + terms + ')';
-    } else {
-        // Multi-word English queries: remove stop words, use fuzzy AND
-        // Single-word and Hindi queries: exact phrase match
-        const isEnglish = detectLanguage(query) === 'eng_Latn';
-        const cleaned = isEnglish ? removeStopWords(query) : query;
-        const words = cleaned.trim().split(/\s+/);
-        if (isEnglish && words.length > 1) {
-            const fuzzyTerms = words.map(function(w) { return w + '~1'; }).join(' AND ');
+    } else if (!exact && detectLanguage(query) === 'eng_Latn') {
+        // Multi-word English typed queries: sanitize, remove stop words, use fuzzy AND
+        const safeWords = sanitizeForFuzzy(query);
+        if (safeWords.length > 1) {
+            const fuzzyTerms = safeWords.map(function(w) { return w + '~1'; }).join(' AND ');
             qValue = 'dc.title:(' + fuzzyTerms + ')';
         } else {
             qValue = 'dc.title:"' + query + '"';
         }
+    } else {
+        // Exact phrase: Hindi queries, single-word, or suggestion clicks
+        qValue = 'dc.title:"' + query + '"';
     }
     const params = new URLSearchParams({
         'q':     qValue,
@@ -746,6 +758,14 @@ const STOP_WORDS = new Set(['the','a','an','of','in','on','at','to','for','and',
 
 function removeStopWords(text) {
     return text.trim().split(/\s+/).filter(function(w) { return !STOP_WORDS.has(w.toLowerCase()); }).join(' ');
+}
+
+// Strip Solr special chars and keep only alphabetic words (for fuzzy query safety)
+function sanitizeForFuzzy(text) {
+    return text.trim().split(/\s+/)
+        .map(function(w) { return w.replace(/[^a-zA-Z]/g, ''); })  // strip non-alpha
+        .filter(function(w) { return w.length >= 2; })               // skip single chars and empty
+        .filter(function(w) { return !STOP_WORDS.has(w.toLowerCase()); });
 }
 
 // ── Utilities ──
