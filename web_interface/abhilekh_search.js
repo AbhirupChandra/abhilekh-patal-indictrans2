@@ -8,7 +8,8 @@ const CONFIG = {
     maxQueryLength: 30,
     suggestMinChars: 2,
     suggestMaxResults: 10,
-    suggestDebounceMs: 600
+    suggestDebounceMs: 600,
+    translateTimeoutMs: 5000
 };
 
 const LANG_NAMES = {
@@ -138,20 +139,20 @@ function setupListeners() {
         const isHindi = detectLanguage(val) !== 'eng_Latn';
 
         if (isHindi) {
-            // Step 1: Translate Hindi to English
+            // Fire Hindi suggestions immediately — don't block on translation
+            const hindiPromise = fetchSuggestions(val, signal);
+
+            // Translate in parallel (with timeout from translateQuery)
             let translatedVal = null;
             try {
                 const result = await translateQuery(val, detectLanguage(val), signal);
                 if ($input.value.trim() !== val) return; // stale check
                 translatedVal = result.translated;
-                // Guard against empty translation
                 if (!translatedVal || !translatedVal.trim()) translatedVal = null;
             } catch (e) {
-                // Translation failed — will only show Hindi suggestions
+                // Translation failed or timed out — proceed with Hindi only
             }
 
-            // Step 2: Fetch BOTH Hindi and English suggestions in parallel
-            const hindiPromise = fetchSuggestions(val, signal);
             const englishPromise = translatedVal
                 ? fetchSuggestions(translatedVal, signal)
                 : Promise.resolve([]);
@@ -159,7 +160,7 @@ function setupListeners() {
 
             if ($input.value.trim() !== val) return; // stale check
 
-            // Step 3: Merge results — Hindi first, then English (deduplicated)
+            // Merge results — Hindi first, then English (deduplicated)
             const seen = new Set();
             const merged = [];
             for (const item of hindiTitles) {
@@ -337,9 +338,36 @@ async function performSearch() {
 
         const synonyms = isNonEnglish ? await expandQuery(searchOriginalQuery) : null;
         const useExact = !!selectedTitle;  // suggestion clicked → exact phrase match
-        // For English suggestion clicks, use resourceId for reliable Solr lookup
-        const engSuggestionClicked = selectedTitle && detectLanguage(selectedTitle) === 'eng_Latn' && clickedResourceId;
-        const translatedPromise = searchSolr(searchTranslatedQuery, 0, null, useExact, engSuggestionClicked ? clickedResourceId : null);
+
+        // ── Suggestion click → single-panel display (no tabs) ──
+        if (clickedResourceId) {
+            const data = await searchSolr(searchTranslatedQuery, 0, null, true, clickedResourceId);
+            $loadingArea.style.display = 'none';
+
+            const tp = panels.translated;
+            tp.query       = searchTranslatedQuery;
+            tp.totalFound  = data.response.numFound;
+            tp.allResults  = data.response.docs;
+            tp.solrStart   = tp.allResults.length;
+            tp.visibleCount = 0;
+
+            if (tp.totalFound === 0) {
+                $noResults.style.display = 'block';
+                return;
+            }
+
+            // No tabs — single panel for suggestion click
+            $resultTabs.style.display = 'none';
+            $('translatedResultCount').textContent = tp.totalFound.toLocaleString();
+            $('translatedQueryTag').textContent = 'Selected Title';
+            showMore('translated');
+            switchTab('translated');
+            $('panelTranslated').style.removeProperty('display');
+            return;
+        }
+
+        // ── Normal search (Enter/button) → dual-panel as before ──
+        const translatedPromise = searchSolr(searchTranslatedQuery, 0, null, useExact);
         const originalPromise   = isNonEnglish ? searchSolr(searchOriginalQuery, 0, synonyms, useExact) : null;
 
         const translatedData = await translatedPromise;
@@ -434,17 +462,25 @@ async function performSearch() {
 
 // ── Translation ──
 async function translateQuery(text, srcLang, signal) {
-    const opts = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, src_lang: srcLang, tgt_lang: 'eng_Latn' })
-    };
-    if (signal) opts.signal = signal;
-    const res = await fetch(CONFIG.translationServiceUrl, opts);
-    if (!res.ok) throw new Error('Translation service unavailable');
-    const data = await res.json();
-    if (!data.success) throw new Error('Translation failed: ' + (data.error || 'Unknown'));
-    return data;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG.translateTimeoutMs);
+    if (signal) signal.addEventListener('abort', () => controller.abort());
+    try {
+        const res = await fetch(CONFIG.translationServiceUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, src_lang: srcLang, tgt_lang: 'eng_Latn' }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error('Translation service unavailable');
+        const data = await res.json();
+        if (!data.success) throw new Error('Translation failed: ' + (data.error || 'Unknown'));
+        return data;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+    }
 }
 
 // ── Synonym Expansion ──
@@ -710,14 +746,13 @@ function updatePanelShowMore(panelKey) {
 // ── Translation Info ──
 function showTranslationInfo(original, translated, isNonEnglish, selectedTitle) {
     const $ti = $('translationInfo');
-    if (isNonEnglish) {
-        let html =
+    if (selectedTitle) {
+        // Suggestion click — just show the selected title
+        $ti.innerHTML = '<p><strong>Selected title:</strong> ' + escapeHtml(selectedTitle) + '</p>';
+    } else if (isNonEnglish) {
+        $ti.innerHTML =
             '<p><strong>Original (' + LANG_NAMES[currentLanguage] + '):</strong> ' + escapeHtml(original) + '</p>' +
             '<p><strong>Translated (English):</strong> <span class="translated-text">' + escapeHtml(translated) + '</span></p>';
-        if (selectedTitle) {
-            html += '<p><strong>Selected title:</strong> ' + escapeHtml(selectedTitle) + '</p>';
-        }
-        $ti.innerHTML = html;
     } else {
         $ti.innerHTML =
             '<p><strong>Query:</strong> ' + escapeHtml(original) + '</p>';
