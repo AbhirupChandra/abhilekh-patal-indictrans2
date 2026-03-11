@@ -27,8 +27,13 @@ import logging
 import time
 import json
 import os
-
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from auth.auth_routes import auth_bp
+from auth.decorators import token_required
 from usage_tracker import UsageTracker
+
+
 
 # Configure logging
 logging.basicConfig(
@@ -39,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(auth_bp)
 
 # -- Configuration --
 MAX_QUERY_LENGTH = 30
@@ -280,7 +286,8 @@ def home():
 
 
 @app.route('/translate', methods=['POST'])
-def translate():
+@token_required
+def translate(current_user):
     """Translation endpoint with character limit and usage tracking"""
     start_time = time.time()
     client_ip = get_client_ip()
@@ -305,7 +312,8 @@ def translate():
                 usage_tracker.log_request(
                     ip_address=client_ip, endpoint='/translate',
                     query_text=text[:50], char_count=len(text),
-                    response_status=400, response_time_ms=elapsed
+                    response_status=400, response_time_ms=elapsed,
+                    username=current_user['username']
                 )
             except Exception:
                 pass
@@ -339,7 +347,8 @@ def translate():
             usage_tracker.log_request(
                 ip_address=client_ip, endpoint='/translate',
                 query_text=text, char_count=len(text),
-                response_status=200, response_time_ms=elapsed
+                response_status=200, response_time_ms=elapsed,
+                username=current_user['username']
             )
         except Exception as log_err:
             logger.warning(f"Usage logging failed: {log_err}")
@@ -354,7 +363,8 @@ def translate():
                 ip_address=client_ip, endpoint='/translate',
                 query_text=(data.get('text', '') if data else '')[:50],
                 char_count=len(data.get('text', '')) if data else 0,
-                response_status=500, response_time_ms=elapsed
+                response_status=500, response_time_ms=elapsed,
+                username=current_user['username']
             )
         except Exception:
             pass
@@ -365,7 +375,8 @@ def translate():
 
 
 @app.route('/expand', methods=['POST'])
-def expand():
+@token_required
+def expand(current_user):
     """Synonym expansion endpoint with character limit and usage tracking"""
     start_time = time.time()
     client_ip = get_client_ip()
@@ -388,7 +399,8 @@ def expand():
                 usage_tracker.log_request(
                     ip_address=client_ip, endpoint='/expand',
                     query_text=text[:50], char_count=len(text),
-                    response_status=400, response_time_ms=elapsed
+                    response_status=400, response_time_ms=elapsed,
+                    username=current_user['username']
                 )
             except Exception:
                 pass
@@ -408,7 +420,8 @@ def expand():
             usage_tracker.log_request(
                 ip_address=client_ip, endpoint='/expand',
                 query_text=text, char_count=len(text),
-                response_status=200, response_time_ms=elapsed
+                response_status=200, response_time_ms=elapsed,
+                username=current_user['username']
             )
         except Exception as log_err:
             logger.warning(f"Usage logging failed: {log_err}")
@@ -428,7 +441,8 @@ def expand():
                 ip_address=client_ip, endpoint='/expand',
                 query_text=(data.get('text', '') if data else '')[:50],
                 char_count=len(data.get('text', '')) if data else 0,
-                response_status=500, response_time_ms=elapsed
+                response_status=500, response_time_ms=elapsed,
+                username=current_user['username']
             )
         except Exception:
             pass

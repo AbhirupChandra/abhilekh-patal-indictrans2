@@ -1,3 +1,107 @@
+// ── Authentication ──
+const AUTH_CONFIG = {
+    loginUrl: 'http://localhost:5002/auth/login',
+    tokenKey: 'abhilekh_jwt_token',
+    userKey: 'abhilekh_user'
+};
+
+function getToken() {
+    return localStorage.getItem(AUTH_CONFIG.tokenKey);
+}
+
+function getUser() {
+    try {
+        return JSON.parse(localStorage.getItem(AUTH_CONFIG.userKey));
+    } catch { return null; }
+}
+
+function setAuth(token, user) {
+    localStorage.setItem(AUTH_CONFIG.tokenKey, token);
+    localStorage.setItem(AUTH_CONFIG.userKey, JSON.stringify(user));
+    updateAuthUI();
+}
+
+function clearAuth() {
+    localStorage.removeItem(AUTH_CONFIG.tokenKey);
+    localStorage.removeItem(AUTH_CONFIG.userKey);
+    updateAuthUI();
+}
+
+function updateAuthUI() {
+    var user = getUser();
+    var btn = document.getElementById('btnAuth');
+    var name = document.getElementById('authUserName');
+    if (user && getToken()) {
+        name.textContent = user.full_name || user.username;
+        btn.textContent = 'LOGOUT';
+        btn.classList.add('logged-in');
+    } else {
+        name.textContent = '';
+        btn.textContent = 'LOGIN';
+        btn.classList.remove('logged-in');
+    }
+}
+
+function handleAuthClick() {
+    if (getToken()) {
+        clearAuth();
+    } else {
+        openLoginModal();
+    }
+}
+
+function openLoginModal() {
+    document.getElementById('loginOverlay').classList.add('visible');
+    document.getElementById('loginUsername').focus();
+    document.getElementById('loginError').textContent = '';
+}
+
+function closeLoginModal() {
+    document.getElementById('loginOverlay').classList.remove('visible');
+    document.getElementById('loginForm').reset();
+    document.getElementById('loginError').textContent = '';
+}
+
+async function handleLogin(e) {
+    e.preventDefault();
+    var btn = document.getElementById('btnLoginSubmit');
+    var errEl = document.getElementById('loginError');
+    var username = document.getElementById('loginUsername').value.trim();
+    var password = document.getElementById('loginPassword').value;
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    errEl.textContent = '';
+
+    try {
+        var res = await fetch(AUTH_CONFIG.loginUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, password: password })
+        });
+        var data = await res.json();
+
+        if (data.success) {
+            setAuth(data.token, data.user);
+            closeLoginModal();
+        } else {
+            errEl.textContent = data.error || 'Login failed';
+        }
+    } catch (err) {
+        errEl.textContent = 'Cannot connect to server';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+    }
+}
+
+function authHeaders() {
+    var headers = { 'Content-Type': 'application/json' };
+    var token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
+}
+
 // ── Configuration ──
 const CONFIG = {
     translationServiceUrl: 'http://localhost:5002/translate',
@@ -69,6 +173,7 @@ function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+    updateAuthUI();
     fetchRecordCount();
     setupListeners();
     $('charCounter').style.display = 'none'; // hidden until user types Hindi
@@ -132,6 +237,12 @@ function setupListeners() {
 
         const val = $input.value.trim();
         if (val.length < CONFIG.suggestMinChars) {
+            hideSuggestions();
+            return;
+        }
+
+        // Block suggestions if not logged in
+        if (!getToken()) {
             hideSuggestions();
             return;
         }
@@ -260,6 +371,13 @@ function switchTab(tabKey) {
 async function performSearch() {
     const query = $input.value.trim();
     if (!query) return;
+
+    // Block all searches if not logged in
+    if (!getToken()) {
+        openLoginModal();
+        return;
+    }
+
     hideSuggestions();
 
     // Auto-detect language from input text
@@ -468,11 +586,16 @@ async function translateQuery(text, srcLang, signal) {
     try {
         const res = await fetch(CONFIG.translationServiceUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders(),
             body: JSON.stringify({ text, src_lang: srcLang, tgt_lang: 'eng_Latn' }),
             signal: controller.signal
         });
         clearTimeout(timeoutId);
+        if (res.status === 401) {
+            clearAuth();
+            openLoginModal();
+            throw new Error('Please login to continue');
+        }
         if (!res.ok) throw new Error('Translation service unavailable');
         const data = await res.json();
         if (!data.success) throw new Error('Translation failed: ' + (data.error || 'Unknown'));
@@ -489,9 +612,14 @@ async function expandQuery(text) {
         const expandUrl = CONFIG.translationServiceUrl.replace('/translate', '/expand');
         const res = await fetch(expandUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders(),
             body: JSON.stringify({ text: text })
         });
+        if (res.status === 401) {
+            clearAuth();
+            openLoginModal();
+            return null;
+        }
         if (!res.ok) return null;
         const data = await res.json();
         if (data.success && data.has_synonyms && data.synonyms.length > 1) {

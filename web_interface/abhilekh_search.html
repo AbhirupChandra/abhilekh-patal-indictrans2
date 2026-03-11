@@ -26,7 +26,42 @@
             <a href="#" class="active" onclick="location.reload(); return false;">HOME</a>
             <a href="https://abhilekh-patal.in/Category/Search/Search" target="_blank" rel="noopener">EXPLORE</a>
         </div>
+        <div class="navbar-auth">
+            <span class="auth-user-name" id="authUserName"></span>
+            <button class="btn-auth" id="btnAuth" onclick="handleAuthClick()">LOGIN</button>
+        </div>
     </nav>
+
+    <!-- Login Modal Overlay -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-modal">
+            <button class="login-close" onclick="closeLoginModal()">&times;</button>
+            <div class="login-header">
+                <svg class="login-emblem" viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="20" r="19" stroke="#8b1a1a" stroke-width="2"/>
+                    <rect x="12" y="14" width="16" height="14" rx="1" stroke="#8b1a1a" stroke-width="1.5" fill="none"/>
+                    <line x1="15" y1="18" x2="25" y2="18" stroke="#8b1a1a" stroke-width="1"/>
+                    <line x1="15" y1="21" x2="25" y2="21" stroke="#8b1a1a" stroke-width="1"/>
+                    <line x1="15" y1="24" x2="22" y2="24" stroke="#8b1a1a" stroke-width="1"/>
+                    <rect x="17" y="9" width="6" height="5" rx="1" stroke="#8b1a1a" stroke-width="1.2" fill="#8b1a1a"/>
+                </svg>
+                <h2>Abhilekh Patal</h2>
+                <p>Sign in to continue</p>
+            </div>
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="login-field">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" placeholder="Enter your username" required autocomplete="username" />
+                </div>
+                <div class="login-field">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" placeholder="Enter your password" required autocomplete="current-password" />
+                </div>
+                <div class="login-error" id="loginError"></div>
+                <button type="submit" class="btn-login-submit" id="btnLoginSubmit">Sign In</button>
+            </form>
+        </div>
+    </div>
 
     <!-- Update Bar -->
     <div class="update-bar">

@@ -37,6 +37,7 @@ class UsageTracker:
         """
         self.db_path = db_path or os.environ.get('USAGE_DB_PATH', DEFAULT_DB_PATH)
         self._init_db()
+        self._migrate_db()
         logger.info(f"Usage tracker initialized: {self.db_path}")
 
     def _get_conn(self):
@@ -74,8 +75,20 @@ class UsageTracker:
         finally:
             conn.close()
 
+    def _migrate_db(self):
+        """Add columns for newer features. Safe to run multiple times."""
+        conn = self._get_conn()
+        try:
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(usage_log)").fetchall()]
+            if 'username' not in columns:
+                conn.execute("ALTER TABLE usage_log ADD COLUMN username TEXT DEFAULT 'anonymous'")
+                conn.commit()
+                logger.info("Migration: added 'username' column to usage_log")
+        finally:
+            conn.close()
+
     def log_request(self, ip_address, endpoint, query_text, char_count,
-                    response_status=200, response_time_ms=None):
+                    response_status=200, response_time_ms=None, username='anonymous'):
         """
         Log a single API request.
 
@@ -93,8 +106,8 @@ class UsageTracker:
             conn.execute(
                 """INSERT INTO usage_log
                    (timestamp, date, month, ip_address, endpoint, query_text,
-                    char_count, response_status, response_time_ms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    char_count, response_status, response_time_ms, username)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     now.strftime('%Y-%m-%dT%H:%M:%S'),
                     now.strftime('%Y-%m-%d'),
@@ -104,7 +117,8 @@ class UsageTracker:
                     query_text,
                     char_count,
                     response_status,
-                    response_time_ms
+                    response_time_ms,
+                    username
                 )
             )
             conn.commit()
@@ -222,7 +236,7 @@ class UsageTracker:
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                """SELECT timestamp, ip_address, endpoint, query_text,
+                """SELECT timestamp, ip_address, username, endpoint, query_text,
                           char_count, response_status, response_time_ms
                    FROM usage_log ORDER BY id DESC LIMIT ?""",
                 (limit,)
